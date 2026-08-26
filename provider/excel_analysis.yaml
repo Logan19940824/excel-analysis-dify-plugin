@@ -2,15 +2,15 @@ identity:
   author: "modsdom"
   name: "excel_analysis"
   label:
-    en_US: "excel_analysis"
-    zh_Hans: "excel_analysis"
-    pt_BR: "excel_analysis"
-    ja_JP: "excel_analysis"
+    en_US: "Excel Analysis"
+    zh_Hans: "Excel 分析"
+    pt_BR: "Análise de Excel"
+    ja_JP: "Excel 分析"
   description:
     en_US: "An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports."
-    zh_Hans: "An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports."
-    pt_BR: "An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports."
-    ja_JP: "An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports."
+    zh_Hans: "用于分析 Excel 和 CSV 文件的智能数据分析插件，可获取工作表结构、列信息及统计查询结果。"
+    pt_BR: "Um plugin inteligente de análise de dados para arquivos Excel e CSV, capaz de obter a estrutura das planilhas, informações das colunas e resultados estatísticos."
+    ja_JP: "Excel や CSV ファイルを解析し、シート構造、列情報、統計結果を取得できるデータ分析プラグインです。"
   icon: "icon.svg"
 
 #########################################################################################
