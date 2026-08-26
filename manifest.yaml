@@ -1,0 +1,38 @@
+version: 0.1.0
+type: plugin
+author: modsdom
+name: excel_analysis
+label:
+  en_US: excel_analysis
+  ja_JP: excel_analysis
+  zh_Hans: excel_analysis
+  pt_BR: excel_analysis
+description:
+  en_US: An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports.
+  ja_JP: An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports.
+  zh_Hans: An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports.
+  pt_BR: An intelligent Excel data analysis plugin that automatically parses spreadsheet data and generates statistical insights and visual reports.
+icon: icon.svg
+icon_dark: icon-dark.svg
+resource:
+  memory: 268435456
+  permission:
+    storage:
+      enabled: true
+      size: 1048576
+plugins:
+  tools:
+    - provider/excel_analysis.yaml
+meta:
+  version: 0.1.0
+  arch:
+    - amd64
+    - arm64
+  runner:
+    language: python
+    version: "3.12"
+    entrypoint: main
+  minimum_dify_version: null
+created_at: 2026-08-25T20:30:06.4428122+08:00
+privacy: PRIVACY.md
+verified: false

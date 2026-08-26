@@ -1,0 +1,26 @@
+identity:
+  name: get_workbook_info
+  author: local
+  label:
+    en_US: Inspect workbook
+    zh_Hans: 分析工作簿结构
+description:
+  human:
+    en_US: Inspect an Excel or CSV file and return sheets, columns, types, row counts, and sample rows.
+    zh_Hans: 分析 Excel 或 CSV 文件，返回工作表、列、类型、行数和样例数据。
+  llm: Inspect the workbook before writing SQL. The file_url must be a Dify-downloadable HTTP(S) URL. Use the returned sheet and column names exactly in later SQL queries.
+parameters:
+  - name: file_url
+    type: string
+    required: true
+    form: llm
+    human_description:
+      en_US: HTTP(S) URL of the Excel or CSV file to inspect.
+      zh_Hans: Workbook file URL to inspect.
+    label:
+      en_US: File URL
+      zh_Hans: 文件 URL
+    llm_description: A stable HTTP(S) download URL for the Excel or CSV file supplied by Dify.
+extra:
+  python:
+    source: tools/get_workbook_info.py

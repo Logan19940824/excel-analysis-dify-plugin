@@ -1,0 +1,61 @@
+identity:
+  name: query_workbook
+  author: local
+  label:
+    en_US: Query workbook
+    zh_Hans: 查询工作簿
+description:
+  human:
+    en_US: Run a read-only DuckDB SELECT or CTE query over an Excel or CSV file.
+    zh_Hans: 对 Excel 或 CSV 文件执行只读 DuckDB SELECT 或 CTE 查询。
+  llm: Run one read-only SQL SELECT or CTE query. Use sheet names and column names returned by get_workbook_info. Do not write data or send multiple statements.
+parameters:
+  - name: file_url
+    type: string
+    required: true
+    form: llm
+    human_description:
+      en_US: HTTP(S) URL of the workbook to query.
+      zh_Hans: Workbook file URL to query.
+    label:
+      en_US: File URL
+      zh_Hans: 文件 URL
+    llm_description: The same stable Dify HTTP(S) file URL used for workbook inspection.
+  - name: sha256
+    type: string
+    required: true
+    form: llm
+    human_description:
+      en_US: SHA-256 returned by workbook inspection.
+      zh_Hans: SHA-256 returned by workbook inspection.
+    label:
+      en_US: File SHA-256
+      zh_Hans: 文件 SHA-256
+    llm_description: The SHA-256 returned by get_workbook_info. This prevents querying a changed file.
+  - name: sql
+    type: string
+    required: true
+    form: llm
+    human_description:
+      en_US: One read-only DuckDB SELECT or CTE query.
+      zh_Hans: One read-only DuckDB SELECT or CTE query.
+    label:
+      en_US: SQL query
+      zh_Hans: SQL 查询
+    llm_description: One read-only DuckDB SELECT or CTE statement using the exact discovered sheet and column names.
+  - name: limit
+    type: number
+    required: false
+    human_description:
+      en_US: Maximum number of rows to return.
+      zh_Hans: Maximum number of rows to return.
+    default: 1000
+    min: 1
+    max: 1000
+    form: form
+    label:
+      en_US: Result limit
+      zh_Hans: 返回行数上限
+extra:
+  python:
+    source: tools/query_workbook.py
