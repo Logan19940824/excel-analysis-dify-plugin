@@ -16,3 +16,5 @@ The URL must remain accessible between inspection and query calls. The query mus
 3. Pass one read-only `SELECT` or `CTE` statement and an optional result limit.
 
 The plugin requires Python 3.12 at runtime. See `PRIVACY.md` for data handling details and `readme/README_zh_Hans.md` for the Chinese documentation.
+
+Source repository: https://github.com/Logan19940824/excel-analysis-dify-plugin
