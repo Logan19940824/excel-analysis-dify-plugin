@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 import ipaddress
 import json
+import logging
 import socket
 import shutil
 import tempfile
 import threading
+import uuid
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
@@ -19,6 +20,8 @@ import httpx
 import sqlglot
 from openpyxl import load_workbook
 from sqlglot import expressions as exp
+
+logger = logging.getLogger("excel_analysis")
 
 
 def _json_value(value: Any) -> Any:
@@ -70,14 +73,21 @@ def _validate_url(url: str) -> str:
 
 class WorkbookAnalyzer:
     def __init__(self, max_bytes: int = 50 * 1024 * 1024, max_rows: int = 1000,
-                 timeout_seconds: int = 30, memory_limit: str = "512MB"):
+                 timeout_seconds: int = 30, memory_limit: str = "512MB", storage: Any = None):
         self.max_bytes = max_bytes
         self.max_rows = max_rows
         self.timeout_seconds = timeout_seconds
         self.memory_limit = memory_limit
+        self.storage = storage
 
     def inspect(self, file_url: str) -> dict[str, Any]:
-        with self._database(file_url) as (connection, sha256, filename, file_format):
+        if not self.storage:
+            raise ValueError("persistent storage is required")
+        filename = _validate_url(file_url)
+        logger.info("inspecting workbook filename=%s", filename)
+        cache_id = str(uuid.uuid4())
+        self.storage.set(f"url:{cache_id}", file_url.encode("utf-8"))
+        with self._database(file_url) as (connection, filename, file_format):
             sheets = []
             for table in self._tables(connection):
                 columns = [
@@ -94,59 +104,65 @@ class WorkbookAnalyzer:
                     "columns": columns,
                     "sample_rows": [[_json_value(value) for value in row] for row in sample],
                 })
-            return {
+            result = {
                 "file_url": file_url,
-                "sha256": sha256,
+                "cache_id": cache_id,
                 "filename": filename,
                 "format": file_format,
                 "sheets": sheets,
             }
+            logger.info("workbook inspection completed cache_id=%s sheets=%d", cache_id, len(sheets))
+            return result
 
-    def query(self, file_url: str, sql: str, expected_sha256: str | None = None,
-              limit: int = 1000) -> dict[str, Any]:
+    def query(self, cache_id: str, sql: str, limit: int = 1000) -> dict[str, Any]:
+        if not self.storage:
+            raise ValueError("persistent storage is required")
+        try:
+            raw_url = self.storage.get(f"url:{cache_id}")
+        except Exception as exc:
+            raise ValueError(f"cache_id {cache_id} not found") from exc
+        if not raw_url:
+            raise ValueError(f"cache_id {cache_id} not found")
+        file_url = raw_url.decode("utf-8") if isinstance(raw_url, bytes) else str(raw_url)
         statements = sqlglot.parse(sql, read="duckdb")
-        if len(statements) != 1 or not isinstance(statements[0], exp.Query):
-            raise ValueError("only one read-only SELECT or CTE statement is allowed")
+        if not statements or any(not isinstance(statement, exp.Query) for statement in statements):
+            raise ValueError("only read-only SELECT or CTE statements are allowed")
         forbidden = {"Insert", "Update", "Delete", "Create", "Drop", "Alter", "Command", "Copy", "Attach", "Merge"}
-        if any(node.__class__.__name__ in forbidden for node in statements[0].walk()):
-            raise ValueError("SQL statement is not read-only")
+        for statement in statements:
+            if any(node.__class__.__name__ in forbidden for node in statement.walk()):
+                raise ValueError("SQL statement is not read-only")
         effective_limit = self._limit(limit)
-        with self._database(file_url) as (connection, sha256, _filename, _format):
-            if expected_sha256 and expected_sha256 != sha256:
-                raise ValueError("source file changed; call get_workbook_info again")
-            normalized = statements[0].sql(dialect="duckdb")
-            timer = threading.Timer(self.timeout_seconds, connection.interrupt)
-            try:
-                timer.start()
-                cursor = connection.execute(
-                    f"SELECT * FROM ({normalized}) AS _result LIMIT ?",
-                    [effective_limit + 1],
-                )
-                columns = [{"name": item[0], "type": str(item[1])} for item in cursor.description]
-                rows = [[_json_value(value) for value in row] for row in cursor.fetchall()]
-            except duckdb.InterruptException as exc:
-                raise TimeoutError(f"query exceeded {self.timeout_seconds} seconds") from exc
-            finally:
-                timer.cancel()
-            truncated = len(rows) > effective_limit
-            if truncated:
-                rows = rows[:effective_limit]
-            return {
-                "sha256": sha256,
-                "columns": columns,
-                "rows": rows,
-                "row_count": len(rows),
-                "truncated": truncated,
-            }
+        logger.info("executing workbook query cache_id=%s statements=%d limit=%d", cache_id, len(statements), effective_limit)
+        with self._database(file_url) as (connection, _filename, _format):
+            results = []
+            for statement in statements:
+                normalized = statement.sql(dialect="duckdb")
+                timer = threading.Timer(self.timeout_seconds, connection.interrupt)
+                try:
+                    timer.start()
+                    cursor = connection.execute(
+                        f"SELECT * FROM ({normalized}) AS _result LIMIT ?",
+                        [effective_limit + 1],
+                    )
+                    columns = [{"name": item[0], "type": str(item[1])} for item in cursor.description]
+                    rows = [[_json_value(value) for value in row] for row in cursor.fetchall()]
+                except duckdb.InterruptException as exc:
+                    raise TimeoutError(f"query exceeded {self.timeout_seconds} seconds") from exc
+                finally:
+                    timer.cancel()
+                truncated = len(rows) > effective_limit
+                if truncated:
+                    rows = rows[:effective_limit]
+                results.append({"columns": columns, "rows": rows, "row_count": len(rows), "truncated": truncated})
+            logger.info("workbook query completed cache_id=%s result_sets=%d", cache_id, len(results))
+            return {"cache_id": cache_id, "results": results}
 
     @contextmanager
-    def _database(self, file_url: str) -> Iterator[tuple[duckdb.DuckDBPyConnection, str, str, str]]:
+    def _database(self, file_url: str) -> Iterator[tuple[duckdb.DuckDBPyConnection, str, str]]:
         filename = _validate_url(file_url)
         with tempfile.TemporaryDirectory(prefix="dify-excel-") as directory:
             source = Path(directory) / "source"
             self._download(file_url, source)
-            data = source.read_bytes()
-            sha256 = hashlib.sha256(data).hexdigest()
             connection = None
             selected = None
             error: Exception | None = None
@@ -176,15 +192,16 @@ class WorkbookAnalyzer:
             if connection is None or selected is None:
                 raise ValueError("file cannot be read as .xlsx or .csv") from error
             try:
-                yield connection, sha256, filename, selected[1:]
+                yield connection, filename, selected[1:]
             finally:
                 connection.close()
 
     def _download(self, url: str, destination: Path) -> None:
         current = url
         with httpx.Client(timeout=httpx.Timeout(30), follow_redirects=False) as client:
-            for _ in range(6):
+            for redirect_count in range(6):
                 _validate_url(current)
+                logger.debug("downloading workbook redirect=%d", redirect_count)
                 with client.stream("GET", current, headers={"User-Agent": "dify-excel-plugin/1.0"}) as response:
                     if response.is_redirect:
                         location = response.headers.get("location")
@@ -203,6 +220,7 @@ class WorkbookAnalyzer:
                             if size > self.max_bytes:
                                 raise ValueError("workbook exceeds the configured size limit")
                             output.write(chunk)
+                    logger.info("workbook download completed bytes=%d", size)
                     return
             raise ValueError("too many download redirects")
 
@@ -242,11 +260,12 @@ class WorkbookAnalyzer:
         return min(value, self.max_rows)
 
 
-def analyzer_from_env() -> WorkbookAnalyzer:
+def analyzer_from_env(storage: Any = None) -> WorkbookAnalyzer:
     import os
     return WorkbookAnalyzer(
         max_bytes=int(os.getenv("EXCEL_MAX_BYTES", str(50 * 1024 * 1024))),
         max_rows=int(os.getenv("EXCEL_SQL_MAX_ROWS", "1000")),
         timeout_seconds=int(os.getenv("EXCEL_SQL_TIMEOUT_SECONDS", "30")),
         memory_limit=os.getenv("EXCEL_SQL_MEMORY_LIMIT", "512MB"),
+        storage=storage,
     )

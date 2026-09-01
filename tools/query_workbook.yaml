@@ -8,41 +8,30 @@ description:
   human:
     en_US: Run a read-only DuckDB SELECT or CTE query over an Excel or CSV file.
     zh_Hans: 对 Excel 或 CSV 文件执行只读 DuckDB SELECT 或 CTE 查询。
-  llm: Run one read-only SQL SELECT or CTE query. Use sheet names and column names returned by get_workbook_info. Do not write data or send multiple statements.
+  llm: Run one or more read-only SQL SELECT or CTE queries separated by semicolons. Use sheet names and column names returned by get_workbook_info.
 parameters:
-  - name: file_url
+  - name: cache_id
     type: string
     required: true
     form: llm
     human_description:
-      en_US: HTTP(S) URL of the workbook to query.
-      zh_Hans: Workbook file URL to query.
+      en_US: Cache ID returned by get_workbook_info.
+      zh_Hans: get_workbook_info 返回的缓存 ID。
     label:
-      en_US: File URL
-      zh_Hans: 文件 URL
-    llm_description: The same stable Dify HTTP(S) file URL used for workbook inspection.
-  - name: sha256
-    type: string
-    required: true
-    form: llm
-    human_description:
-      en_US: SHA-256 returned by workbook inspection.
-      zh_Hans: SHA-256 returned by workbook inspection.
-    label:
-      en_US: File SHA-256
-      zh_Hans: 文件 SHA-256
-    llm_description: The SHA-256 returned by get_workbook_info. This prevents querying a changed file.
+      en_US: Cache ID
+      zh_Hans: 缓存 ID
+    llm_description: The cache_id returned by get_workbook_info. Do not pass the original file URL.
   - name: sql
     type: string
     required: true
     form: llm
     human_description:
-      en_US: One read-only DuckDB SELECT or CTE query.
-      zh_Hans: One read-only DuckDB SELECT or CTE query.
+      en_US: One or more read-only DuckDB SELECT or CTE queries separated by semicolons.
+      zh_Hans: 一个或多个只读 DuckDB SELECT 或 CTE 查询，用分号分隔。
     label:
       en_US: SQL query
       zh_Hans: SQL 查询
-    llm_description: One read-only DuckDB SELECT or CTE statement using the exact discovered sheet and column names.
+    llm_description: One or more read-only DuckDB SELECT or CTE statements separated by semicolons, using the exact discovered sheet and column names.
   - name: limit
     type: number
     required: false

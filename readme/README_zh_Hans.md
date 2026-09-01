@@ -16,14 +16,14 @@
 ### 使用方法
 
 1. 在 Dify 中安装并启用 `excel_analysis` 插件。
-2. 先调用 `get_workbook_info`，获取工作表名称、列名和文件 `sha256`。
-3. 调用 `query_workbook` 时，继续使用同一个文件 URL，并传入上一步返回的 `sha256`。
+2. 先调用 `get_workbook_info`，获取工作表名称、列名和 `cache_id`。
+3. 调用 `query_workbook` 时只传入上一步返回的 `cache_id`，不要再次传入文件 URL。
 4. SQL 必须使用实际返回的工作表名和列名，只能执行一条只读 `SELECT` 或 `CTE` 语句。
 
 ### 输入说明
 
 - `file_url`：Dify 可访问的 Excel 或 CSV 文件 HTTP(S) 下载地址。
-- `sha256`：`get_workbook_info` 返回的文件摘要，用于确认查询期间文件未被替换。
+- `cache_id`：`get_workbook_info` 返回的缓存 ID，用于后续查询并避免大模型错误识别 URL。
 - `sql`：单条只读 DuckDB `SELECT` 或 `CTE` 查询。
 - `limit`：返回行数上限，范围为 `1` 到 `1000`，默认值为 `1000`。
 

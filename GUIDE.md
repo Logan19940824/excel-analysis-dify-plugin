@@ -104,8 +104,10 @@ Study these examples to understand plugin implementation:
 
 2. Run your plugin: 
    ```bash
-   uv run python -m main
+   EXCEL_LOG_LEVEL=DEBUG uv run python -m main
    ```
+
+   The plugin writes Dify-compatible logs to stderr. Use `INFO` to reduce verbosity.
 
 3. Refresh your Dify instance to see the plugin (marked as "debugging")
 </details>
