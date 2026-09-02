@@ -8,7 +8,7 @@ description:
   human:
     en_US: Run a read-only DuckDB SELECT or CTE query over an Excel or CSV file.
     zh_Hans: 对 Excel 或 CSV 文件执行只读 DuckDB SELECT 或 CTE 查询。
-  llm: Run one or more read-only SQL SELECT or CTE queries separated by semicolons. Use sheet names and column names returned by get_workbook_info.
+  llm: 'Run one or more read-only SQL SELECT or CTE queries in the sql field. End each query with an English semicolon (;) and put each additional query on a new line. Multiple queries on one line separated by semicolons are also supported. Example: `SELECT COUNT(*) FROM "data";` followed by `SELECT * FROM "data" LIMIT 10`. Use sheet names and column names returned by get_workbook_info.'
 parameters:
   - name: cache_id
     type: string
@@ -31,7 +31,7 @@ parameters:
     label:
       en_US: SQL query
       zh_Hans: SQL 查询
-    llm_description: One or more read-only DuckDB SELECT or CTE statements separated by semicolons, using the exact discovered sheet and column names.
+    llm_description: 'You may provide multiple read-only DuckDB SELECT or CTE statements in this single field. For clarity, end each statement with an English semicolon (;) and put the next statement on a new line. Same-line semicolon-separated statements are also supported. Use the exact discovered sheet and column names. Example: SELECT COUNT(*) FROM "data"; newline SELECT * FROM "data" LIMIT 10'
   - name: limit
     type: number
     required: false

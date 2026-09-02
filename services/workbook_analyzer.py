@@ -38,6 +38,10 @@ def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def _sql_string(value: str | Path) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def _safe_headers(values: tuple[Any, ...]) -> list[str]:
     result: list[str] = []
     used: set[str] = set()
@@ -86,8 +90,8 @@ class WorkbookAnalyzer:
         filename = _validate_url(file_url)
         logger.info("inspecting workbook filename=%s", filename)
         cache_id = str(uuid.uuid4())
-        self.storage.set(f"url:{cache_id}", file_url.encode("utf-8"))
-        with self._database(file_url) as (connection, filename, file_format):
+        source_bytes = self._download_bytes(file_url)
+        with self._database(file_url=file_url, source_bytes=source_bytes, allow_external_access=True) as (connection, filename, file_format):
             sheets = []
             for table in self._tables(connection):
                 columns = [
@@ -104,6 +108,19 @@ class WorkbookAnalyzer:
                     "columns": columns,
                     "sample_rows": [[_json_value(value) for value in row] for row in sample],
                 })
+            parquet_sources = []
+            for index, table in enumerate(self._tables(connection)):
+                key = f"parquet:{cache_id}:{index}"
+                parquet_path = Path(tempfile.mkdtemp(prefix="dify-parquet-")) / f"{index}.parquet"
+                try:
+                    connection.execute(
+                        f"COPY (SELECT * FROM {_quote(table)}) TO {_sql_string(parquet_path)} (FORMAT PARQUET)"
+                    )
+                    self.storage.set(key, parquet_path.read_bytes())
+                    parquet_sources.append({"name": table, "key": key})
+                finally:
+                    shutil.rmtree(parquet_path.parent, ignore_errors=True)
+            self.storage.set(f"meta:{cache_id}", json.dumps({"filename": filename, "format": file_format, "sheets": parquet_sources}).encode("utf-8"))
             result = {
                 "file_url": file_url,
                 "cache_id": cache_id,
@@ -118,12 +135,14 @@ class WorkbookAnalyzer:
         if not self.storage:
             raise ValueError("persistent storage is required")
         try:
-            raw_url = self.storage.get(f"url:{cache_id}")
+            meta = json.loads(self.storage.get(f"meta:{cache_id}").decode("utf-8"))
+            parquet_sources = []
+            for sheet in meta["sheets"]:
+                parquet_sources.append((sheet["name"], self.storage.get(sheet["key"])))
         except Exception as exc:
             raise ValueError(f"cache_id {cache_id} not found") from exc
-        if not raw_url:
+        if not parquet_sources:
             raise ValueError(f"cache_id {cache_id} not found")
-        file_url = raw_url.decode("utf-8") if isinstance(raw_url, bytes) else str(raw_url)
         statements = sqlglot.parse(sql, read="duckdb")
         if not statements or any(not isinstance(statement, exp.Query) for statement in statements):
             raise ValueError("only read-only SELECT or CTE statements are allowed")
@@ -133,7 +152,7 @@ class WorkbookAnalyzer:
                 raise ValueError("SQL statement is not read-only")
         effective_limit = self._limit(limit)
         logger.info("executing workbook query cache_id=%s statements=%d limit=%d", cache_id, len(statements), effective_limit)
-        with self._database(file_url) as (connection, _filename, _format):
+        with self._database(parquet_sources=parquet_sources) as (connection, _filename, _format):
             results = []
             for statement in statements:
                 normalized = statement.sql(dialect="duckdb")
@@ -158,11 +177,34 @@ class WorkbookAnalyzer:
             return {"cache_id": cache_id, "results": results}
 
     @contextmanager
-    def _database(self, file_url: str) -> Iterator[tuple[duckdb.DuckDBPyConnection, str, str]]:
-        filename = _validate_url(file_url)
+    def _database(self, file_url: str | None = None, source_bytes: bytes | None = None,
+                  parquet_sources: list[tuple[str, bytes]] | None = None,
+                  allow_external_access: bool = False) -> Iterator[tuple[duckdb.DuckDBPyConnection, str, str]]:
+        if not file_url and source_bytes is None and parquet_sources is None:
+            raise ValueError("either file_url, source_bytes, or parquet_sources is required")
+        filename = _validate_url(file_url) if file_url else "workbook"
         with tempfile.TemporaryDirectory(prefix="dify-excel-") as directory:
+            if parquet_sources is not None:
+                database = Path(directory) / "workbook.duckdb"
+                connection = duckdb.connect(str(database), config={"memory_limit": self.memory_limit})
+                try:
+                    for index, (table, data) in enumerate(parquet_sources):
+                        path = Path(directory) / f"{index}.parquet"
+                        path.write_bytes(data)
+                        connection.execute(
+                            f"CREATE TEMP TABLE {_quote(table)} AS SELECT * FROM read_parquet({_sql_string(path)})"
+                        )
+                    if not allow_external_access:
+                        connection.execute("SET enable_external_access=false")
+                    yield connection, filename, "parquet"
+                finally:
+                    connection.close()
+                return
             source = Path(directory) / "source"
-            self._download(file_url, source)
+            if source_bytes is None:
+                self._download(file_url, source)
+            else:
+                source.write_bytes(source_bytes)
             connection = None
             selected = None
             error: Exception | None = None
@@ -180,7 +222,8 @@ class WorkbookAnalyzer:
                     else:
                         self._import_xlsx(connection, source)
                     # CSV/XLSX import needs local file access; user SQL must not.
-                    connection.execute("SET enable_external_access=false")
+                    if not allow_external_access:
+                        connection.execute("SET enable_external_access=false")
                     selected = suffix
                     break
                 except Exception as exc:
@@ -195,6 +238,12 @@ class WorkbookAnalyzer:
                 yield connection, filename, selected[1:]
             finally:
                 connection.close()
+
+    def _download_bytes(self, url: str) -> bytes:
+        with tempfile.TemporaryDirectory(prefix="dify-excel-download-") as directory:
+            destination = Path(directory) / "source"
+            self._download(url, destination)
+            return destination.read_bytes()
 
     def _download(self, url: str, destination: Path) -> None:
         current = url

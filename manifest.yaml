@@ -1,4 +1,4 @@
-version: 0.1.0
+version: 0.2.0
 type: plugin
 author: modsdom
 name: excel_analysis
@@ -19,12 +19,12 @@ resource:
   permission:
     storage:
       enabled: true
-      size: 1048576
+      size: 104857600
 plugins:
   tools:
     - provider/excel_analysis.yaml
 meta:
-  version: 0.1.0
+  version: 0.2.0
   arch:
     - amd64
     - arm64
