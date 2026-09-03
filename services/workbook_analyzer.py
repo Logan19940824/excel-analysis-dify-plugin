@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import ipaddress
 import json
 import logging
-import socket
 import shutil
 import tempfile
 import threading
@@ -57,22 +55,8 @@ def _safe_headers(values: tuple[Any, ...]) -> list[str]:
     return result
 
 
-def _validate_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("file_url must be an HTTP(S) URL")
-    if parsed.username or parsed.password:
-        raise ValueError("file_url must not contain embedded credentials")
-    try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or 443)}
-    except socket.gaierror as exc:
-        raise ValueError("file_url hostname could not be resolved") from exc
-    for value in addresses:
-        address = ipaddress.ip_address(value)
-        if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
-            raise ValueError("file_url must resolve to a public address")
-    filename = Path(unquote(parsed.path)).name or "workbook"
-    return filename
+def _filename_from_url(url: str) -> str:
+    return Path(unquote(urlparse(url).path)).name or "workbook"
 
 
 class WorkbookAnalyzer:
@@ -87,7 +71,7 @@ class WorkbookAnalyzer:
     def inspect(self, file_url: str) -> dict[str, Any]:
         if not self.storage:
             raise ValueError("persistent storage is required")
-        filename = _validate_url(file_url)
+        filename = _filename_from_url(file_url)
         logger.info("inspecting workbook filename=%s", filename)
         cache_id = str(uuid.uuid4())
         source_bytes = self._download_bytes(file_url)
@@ -182,7 +166,7 @@ class WorkbookAnalyzer:
                   allow_external_access: bool = False) -> Iterator[tuple[duckdb.DuckDBPyConnection, str, str]]:
         if not file_url and source_bytes is None and parquet_sources is None:
             raise ValueError("either file_url, source_bytes, or parquet_sources is required")
-        filename = _validate_url(file_url) if file_url else "workbook"
+        filename = _filename_from_url(file_url) if file_url else "workbook"
         with tempfile.TemporaryDirectory(prefix="dify-excel-") as directory:
             if parquet_sources is not None:
                 database = Path(directory) / "workbook.duckdb"
@@ -249,7 +233,6 @@ class WorkbookAnalyzer:
         current = url
         with httpx.Client(timeout=httpx.Timeout(30), follow_redirects=False) as client:
             for redirect_count in range(6):
-                _validate_url(current)
                 logger.debug("downloading workbook redirect=%d", redirect_count)
                 with client.stream("GET", current, headers={"User-Agent": "dify-excel-plugin/1.0"}) as response:
                     if response.is_redirect:
